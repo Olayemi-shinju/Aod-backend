@@ -47,7 +47,6 @@ const calculateCartSummary = async (userId) => {
   return { detailedItems, subtotal, totalItems };
 };
 
-// Add or update cart item and remove from wishlist if present
 export const addToCart = async (req, res) => {
   try {
     const { productId, quantity } = req.body;
@@ -57,9 +56,15 @@ export const addToCart = async (req, res) => {
     if (!product) return res.status(404).json({ msg: "Product not found" });
 
     const existing = await Cart.findOne({ user: userId, product: productId });
+    const existingQty = existing ? existing.quantity : 0;
+    const totalRequested = existingQty + quantity;
+
+    if (totalRequested > product.quantity) {
+      return res.status(400).json({ msg: `Only ${product.quantity} item(s) in stock. You already have ${existingQty} in your cart.` });
+    }
 
     if (existing) {
-      existing.quantity += quantity;
+      existing.quantity = totalRequested;
       await existing.save();
     } else {
       await Cart.create({
@@ -69,9 +74,8 @@ export const addToCart = async (req, res) => {
       });
     }
 
-
     const summary = await calculateCartSummary(userId);
-    res.status(200).json({ msg: "Cart updated (and removed from wishlist if present)", ...summary });
+    res.status(200).json({ msg: "Cart updated", ...summary });
   } catch (error) {
     console.error("Add to cart error:", error);
     res.status(500).json({ msg: "Internal server error" });
@@ -79,7 +83,7 @@ export const addToCart = async (req, res) => {
 };
 
 
-// Add to cart and remove from wishlist if present
+
 export const addToCartAndRemoveFromWishlist = async (req, res) => {
   try {
     const { productId, quantity } = req.body;
@@ -89,9 +93,15 @@ export const addToCartAndRemoveFromWishlist = async (req, res) => {
     if (!product) return res.status(404).json({ msg: "Product not found" });
 
     const existing = await Cart.findOne({ user: userId, product: productId });
+    const existingQty = existing ? existing.quantity : 0;
+    const totalRequested = existingQty + quantity;
+
+    if (totalRequested > product.quantity) {
+      return res.status(400).json({ msg: `Only ${product.quantity} item(s) in stock. You already have ${existingQty} in your cart.` });
+    }
 
     if (existing) {
-      existing.quantity += quantity;
+      existing.quantity = totalRequested;
       await existing.save();
     } else {
       await Cart.create({
@@ -101,7 +111,6 @@ export const addToCartAndRemoveFromWishlist = async (req, res) => {
       });
     }
 
-    // Remove from wishlist if present
     await Wishlist.findOneAndDelete({ user: userId, product: productId });
 
     const summary = await calculateCartSummary(userId);

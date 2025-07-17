@@ -90,6 +90,7 @@ export const getAllProduct = async (req, res) => {
 
     const lowStockWarnings = products.filter(p => p.quantity < 5).map(p => ({
       id: p._id,
+      image: p.images,
       name: p.name,
       brand: p.brand,
       quantity: p.quantity,
@@ -184,40 +185,125 @@ export const getSingleProduct = async (req, res) => {
     res.status(500).json({ success: false, msg: "Server error." });
   }
 };
-
 // UPDATE PRODUCT (FULL UPDATE)
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
     const existingProduct = await Product.findById(id);
-    if (!existingProduct) return res.status(404).json({ success: false, msg: 'Product not found.' });
+    if (!existingProduct) {
+      return res.status(404).json({ success: false, msg: 'Product not found.' });
+    }
+
+    // Validate image count if images are being updated
+    if (req.files?.images || req.body?.imagesToKeep) {
+      const imagesToKeep = req.body.imagesToKeep
+        ? JSON.parse(req.body.imagesToKeep)
+        : existingProduct.images;
+
+      const newImages = req.files?.images || [];
+      const totalImages = imagesToKeep.length + newImages.length;
+
+      if (totalImages < 1) {
+        return res.status(400).json({
+          success: false,
+          msg: 'At least one image is required.'
+        });
+      }
+
+      if (totalImages > 4) {
+        return res.status(400).json({
+          success: false,
+          msg: 'Maximum of 4 images allowed.'
+        });
+      }
+    }
 
     // ✅ If name is changing, regenerate slug
     if (req.body.name && req.body.name !== existingProduct.name) {
       req.body.slug = slugify(req.body.name, { lower: true, strict: true });
     }
 
-    // Optional: remove old images from cloudinary
-    if (req.files && req.files.images && req.files.images.length > 0) {
-      for (const publicId of existingProduct.imagesPublicIds) {
-        await cloudinary.uploader.destroy(publicId);
+    // Handle image updates
+    if (req.files?.images || req.body?.imagesToRemove) {
+      const imagesToRemove = req.body.imagesToRemove
+        ? JSON.parse(req.body.imagesToRemove)
+        : [];
+
+      // Remove images marked for deletion from Cloudinary
+      if (imagesToRemove.length > 0) {
+        const publicIdsToRemove = existingProduct.imagesPublicIds.filter(publicId =>
+          imagesToRemove.some(imgUrl => imgUrl.includes(publicId))
+        );
+
+        await Promise.all(
+          publicIdsToRemove.map(publicId =>
+            cloudinary.uploader.destroy(publicId).catch(console.error)
+          )
+        );
       }
 
-      const uploadPromises = req.files.images.map(file =>
-        cloudinary.uploader.upload(file.path, { folder: "products" })
-      );
-      const uploadResults = await Promise.all(uploadPromises);
+      // Upload new images if any
+      if (req.files?.images?.length > 0) {
+        const uploadPromises = req.files.images.map(file =>
+          cloudinary.uploader.upload(file.path, { folder: "products" })
+        );
+        const uploadResults = await Promise.all(uploadPromises);
 
-      req.body.images = uploadResults.map(r => r.secure_url);
-      req.body.imagePublicIds = uploadResults.map(r => r.public_id);
+        req.body.images = [
+          ...(req.body.imagesToKeep ? JSON.parse(req.body.imagesToKeep) : existingProduct.images),
+          ...uploadResults.map(r => r.secure_url)
+        ];
+        req.body.imagesPublicIds = [
+          ...(req.body.imagesToKeep
+            ? existingProduct.imagesPublicIds.filter(publicId =>
+              JSON.parse(req.body.imagesToKeep).some(imgUrl => imgUrl.includes(publicId))
+            )
+            : existingProduct.imagesPublicIds),
+          ...uploadResults.map(r => r.public_id)
+        ];
+      } else if (req.body.imagesToKeep) {
+        // Just update the kept images if no new images are added
+        req.body.images = JSON.parse(req.body.imagesToKeep);
+        req.body.imagesPublicIds = existingProduct.imagesPublicIds.filter(publicId =>
+          JSON.parse(req.body.imagesToKeep).some(imgUrl => imgUrl.includes(publicId))
+        );
+      }
     }
 
-    const updated = await Product.findByIdAndUpdate(id, req.body, { new: true });
-    res.status(200).json({ success: true, msg: 'Product updated.', data: updated });
+    // ✅ Reset notifiedLowStock flag if quantity is increased to 5 or more
+    if (req.body.quantity && parseInt(req.body.quantity) >= 5) {
+      req.body.notifiedLowStock = false;
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      { $set: req.body },
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      msg: 'Product updated successfully.',
+      data: updatedProduct
+    });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, msg: 'Server error.' });
+    console.error('Product update error:', error);
+
+    // Handle specific errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        msg: 'Validation error',
+        errors
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      msg: 'Server error during product update.'
+    });
   }
 };
 

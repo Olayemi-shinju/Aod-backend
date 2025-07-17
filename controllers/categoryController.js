@@ -10,7 +10,7 @@ export const createCategory = async (req, res) => {
     const { name } = req.body;
 
     if (!id) {
-      return res.status(400).json({ success: false, msg: 'User ID is required.' });
+      return res.status(400).json({ success: false, msg: 'Admin Id is required.' });
     }
 
     const adminUser = await User.findById(id);

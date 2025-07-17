@@ -25,8 +25,8 @@ const storage = new CloudinaryStorage({
         ? "covers"
         : file.fieldname === "avatar"
         ? "avatars"
-        : file.fieldname === "banner"
-        ? "banners"
+        : file.fieldname === "project"
+        ? "project"
         : "default";
 
     return {
@@ -58,7 +58,7 @@ const upload = multer({
   },
 }).fields([
   { name: "avatar" },
-  { name: "banner" },
+  { name: "project" },
   { name: "cover" },
   { name: "images" },
   { name: "image" },

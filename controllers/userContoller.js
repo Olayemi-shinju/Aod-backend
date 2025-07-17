@@ -3,9 +3,23 @@ import { sendEmail } from '../utils/sendGrid.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto'; // at the top of your file
 import bcrypt from 'bcryptjs';
+import Review from '../models/reviewModel.js'
+import Cart from '../models/cartModel.js'
+import Wishlist from '../models/wishlistModel.js';
+// import {logo} from '../images/Logo.png'
 export const signUp = async (req, res) => {
   try {
     const { name, email, phone, password, role } = req.body;
+
+    if (role === 'admin') {
+      const adminCount = await User.countDocuments({ role: 'admin' });
+      if (adminCount >= 2) {
+        return res.status(403).json({
+          success: false,
+          msg: 'Only two admins are allowed.',
+        });
+      }
+    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -32,7 +46,7 @@ export const signUp = async (req, res) => {
     try {
       await sendEmail({
         to: email,
-        from: 'awoyemiolayemi27@gmail.com',
+        from: process.env.FROM_EMAIL,
         subject: 'Verify Your Account - OTP Code',
         html: `
           <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f9f9f9;">
@@ -55,7 +69,7 @@ export const signUp = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      msg: 'User created. OTP sent to email.',
+      msg: 'Verify your account',
       data: {
         id: savedUser._id,
         name: savedUser.name,
@@ -100,7 +114,7 @@ export const verifyOtp = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      msg: 'User verified successfully. You can now log in.',
+      msg: 'User verified successfully, You can now log in.',
     });
   } catch (error) {
     console.error('OTP verification error:', error.message);
@@ -158,9 +172,6 @@ export const Login = async (req, res) => {
   }
 };
 
-
-
-
 export const Logout = async (req, res) => {
   try {
     const { email } = req.body;
@@ -182,7 +193,7 @@ export const Logout = async (req, res) => {
       isLogin: false
     }
 
-    res.status(200).json({ success: true, msg: 'User logged out successfully', data});
+    res.status(200).json({ success: true, msg: 'User logged out successfully', data });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, msg: 'An error occurred during logout' });
@@ -220,7 +231,7 @@ export const resendOtp = async (req, res) => {
     // 4. Send OTP again
     await sendEmail({
       to: email,
-      from: 'awoyemiolayemi27@gmail.com',
+      from: process.env.FROM_EMAIL,
       subject: 'Resend OTP - AOD Solatricity',
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f9f9f9;">
@@ -269,17 +280,16 @@ export const forgotPassword = async (req, res) => {
     await user.save();
 
     // 4. Send the raw token in the email (as part of the URL)
-    const resetLink = `http://localhost:5173/reset-password/${rawToken}`;
-
+    const resetLink = `${process.env.CLIENT_URL}/reset-password/${rawToken}`
     await sendEmail({
       to: user.email,
-      from: 'awoyemiolayemi27@gmail.com',
+      from: process.env.FROM_EMAIL,
       subject: 'Reset Your Password - AOD Solatricity',
       html: `
       <div style="font-family: 'Segoe UI', sans-serif; background-color: #f4f4f4; padding: 40px;">
         <div style="max-width: 600px; margin: auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
           <div style="text-align: center;">
-            <img src="https://yourcompany.com/logo.png" alt="AOD Solatricity" style="width: 120px; margin-bottom: 20px;" />
+            <img src="" alt="AOD Solatricity" style="width: 120px; margin-bottom: 20px;" />
             <h2 style="color: #2c3e50;">Password Reset Request</h2>
           </div>
           <p style="font-size: 16px; color: #333;">
@@ -381,8 +391,11 @@ export const getSingleUser = async (req, res) => {
       return res.status(404).json({ success: false, msg: 'User not found' });
     }
 
-    // if(user.isLogin === false){
-    //   return res.status(400).json({success: false, msg: 'User must be logged in'})
+    if (req.user.role !== 'admin' && req.user.id !== req.params.id) {
+      return res.status(403).json({ message: 'You are not authorized to view this user.' });
+    }
+
+
     // }
     res.status(200).json({
       success: true,
@@ -431,21 +444,33 @@ export const updateUser = async (req, res) => {
   }
 };
 
-
 export const deleteUser = async (req, res) => {
   try {
-    const { id } = req.params
+    const { id } = req.params;
 
-    const findUser = User.findById(id)
+    const findUser = await User.findById(id);
     if (!findUser) {
-      return res.status(404).json({ success: false, msg: 'This user does not exist and cannot be deleted' })
+      return res.status(404).json({
+        success: false,
+        msg: 'This user does not exist and cannot be deleted',
+      });
     }
-    User.findByIdAndDelete(id)
-    const user = User.find().select('-password -__v otp -otpExpiry')
-    res.status(200).json({ success: true, msg: 'User deleted successfuly', data: user })
-  } catch (error) {
-    console.log('Error Ocurred: ', error.message)
-    res.status(500).json({ success: false, msg: 'An error ocurred' })
-  }
 
+    await User.findByIdAndDelete(id);
+    await Review.deleteMany({ user: id });
+    await Cart.deleteMany({ user: id });
+    await Wishlist.deleteMany({ user: id });
+
+    const users = await User.find().select('-password -__v -otp -otpExpiry');
+
+    res.status(200).json({
+      success: true,
+      msg: 'User deleted successfully',
+      data: users,
+    });
+  } catch (error) {
+    console.error('Error Occurred:', error.message);
+    res.status(500).json({ success: false, msg: 'An error occurred' });
+  }
 };
+

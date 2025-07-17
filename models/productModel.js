@@ -71,7 +71,12 @@ const productSchema = new mongoose.Schema(
     imagesPublicIds: {
       type: [String],
       default: []
+    },
+    notifiedLowStock: {
+      type: Boolean,
+      default: false
     }
+
 
   },
   {
