@@ -70,6 +70,45 @@ export const getMyWishlist = async (req, res) => {
   }
 };
 
+
+export const getAllWishlists = async (req, res) => {
+  try {
+    const allWishlists = await Wishlist.find()
+      .populate("user", "name email") // from userModel
+      .populate("product", "name price images slug") // from productModel
+      .sort({ createdAt: -1 });
+
+    // Group wishlists by user
+    const grouped = {};
+
+    allWishlists.forEach(w => {
+      const uid = w.user._id.toString();
+      if (!grouped[uid]) {
+        grouped[uid] = {
+          user: {
+            id: w.user._id,
+            name: w.user.name,
+            email: w.user.email
+          },
+          wishlist: []
+        };
+      }
+      grouped[uid].wishlist.push({
+        id: w._id,
+        product: w.product,
+        addedAt: w.createdAt
+      });
+    });
+
+    const result = Object.values(grouped);
+
+    return res.status(200).json({ success: true, count: result.length, data: result });
+  } catch (err) {
+    console.error("Error in getAllWishlists", err);
+    return res.status(500).json({ success: false, msg: "Server error" });
+  }
+};
+
 // Remove single item from wishlist
 export const removeFromWishlist = async (req, res) => {
   try {
