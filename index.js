@@ -27,11 +27,20 @@ app.use(cookieParser());
 DB_CONNECT();
 
 // nodeCron()
+const allowedOrigins = process.env.CLIENT_URL.split(',');
+
 const corsOpt = {
-    origin: process.env.CLIENT_URL,
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
 };
+
 
 app.use(cors(corsOpt));
 app.use('/api/v1', userRoute)
