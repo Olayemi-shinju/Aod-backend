@@ -54,7 +54,6 @@ app.use('/api/v1', checkoutRoute)
 app.use('/api/v1', electronicRoutes)
 app.use('/api/v1', projectRoute)
 
-
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
 
